@@ -1,0 +1,110 @@
+#!/usr/bin/env ruby
+# encoding: utf-8
+Version='1.01'
+MYNAME = File.basename($0)
+require 'optparse'
+require 'colorize'
+
+<<'DOC'
+= swap - safely swap two files or directories
+
+= Synopsis
+swap [options] file_or_dir1 file_or_dir2	
+
+-c,--copy	Use if swapping directories in different file systems
+-d,--dryrun	Show what would be done
+-h,--help	print this help and exit
+-V,--version	print version and exit
+
+= Description
+swap swaps the names of two files or two directories. It makes sure that those
+both exist, are writable, are both either directories or regular files, and are
+not the same file. If the two are on different devices, swap makes sure that
+the |--copy| option was used.
+
+= Author
+[Wybo Dekker](wybo@dekkerdocumenten.nl)
+
+= Copyright
+Released under the [GNU General Public License](www.gnu.org/copyleft/gpl.html)
+DOC
+
+def quit(mess)
+   puts mess.red.bold
+   exit 1
+end
+
+# defaults
+@dryrun = @copy = false
+
+ARGV.options do |opt|
+  opt.banner =  "#{MYNAME} - swap to files or directories\n"
+  opt.banner << "Usage: #{MYNAME} [options] file_or_dir1 file_or_dir2"
+  opt.separator ""
+  opt.on('-c','--copy',
+              'Use if swapping directories in different file systems'
+        ) do @copy = true end
+  opt.on('-d','--dryrun',
+              'Show what would be done'
+        )   do @dryrun = true end
+  opt.on('-h','--help',
+              'print this help and exit'
+        ) do
+             puts opt.to_s.sub(/^ *-I\n/,'')
+             exit
+          end
+  opt.on('-V','--version',
+              'print version and exit'
+        ) do
+             puts opt.version
+             exit
+          end
+  opt.on('-I') do system("instscript #{MYNAME}"); exit; end
+  opt.parse!
+end or quit("Error parsing options")
+ARGV.size == 2 or quit("#{MYNAME}: need two file or directory names")
+
+f1, f2 = ARGV.map do |s|
+  f = s.sub(/\/+$/,'')  # remove trailing /
+  quit("I can't handle /bin because I use mv, cp, rm!!") if File.expand_path(f) == '/bin'
+  test(?e,f) or quit("file #{f} does not exist")
+  test(?w,f) or quit("file #{f} is not writable")
+  f
+end
+f1 == f2   and quit("#{f1} and #{f2} are the same file")
+
+s1, s2 = File.lstat(f1), File.lstat(f2)
+ino1, mode1, dev1 = s1.ino, s1.mode >> 9, s1.dev
+ino2, mode2, dev2 = s2.ino, s2.mode >> 9, s2.dev
+
+ino1 == ino2 && quit("#{f1} and #{f2} are the same file")
+
+mode1 != mode2 and quit("you can not swap files (#{f1}, #{f2}) that have different types")
+mode1 == 64 || mode1 == 32 or quit("only directories and straight files can be swapped")
+
+command = (mode1 == 32 && dev1 != dev2) ? 'cp -a' : 'mv'
+if command == 'cp -a' && !@copy 
+  quit("you can not swap directories between different\n" + 
+       "filesystems except by using the -c / --copy option")
+end
+
+# touch in case these files are involved in make operations:
+syscom = [
+  %Q{mv '#{f1}' '#{f1}.#{$$}'},
+  %Q{#{command} '#{f2}' '#{f1}'},
+  %Q{rm -rf '#{f2}'},
+  %Q{#{command} '#{f1}.#{$$}' '#{f2}'},
+  %Q{rm -rf '#{f1}.#{$$}'},
+  %Q{touch '#{f1}' '#{f2}'}
+]
+unless @copy
+   syscom.delete_at(4)
+   syscom.delete_at(2)
+end
+syscom = syscom.join("\n")
+
+if @dryrun
+  puts "This would happen:",syscom
+else 
+  system(syscom)
+end
