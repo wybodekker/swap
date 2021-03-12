@@ -37,31 +37,32 @@ end
 # defaults
 @dryrun = @copy = false
 
-ARGV.options do |opt|
-  opt.banner =  "#{MYNAME} - swap to files or directories\n"
-  opt.banner << "Usage: #{MYNAME} [options] file_or_dir1 file_or_dir2"
-  opt.separator ""
-  opt.on('-c','--copy',
+ARGV.options do |opts|
+  opts.banner =  "#{MYNAME} - swap to files or directories\n"
+  opts.banner << "Usage: #{MYNAME} [options] file_or_dir1 file_or_dir2"
+  opts.separator ""
+  opts.on('-c','--copy',
               'Use if swapping directories in different file systems'
         ) do @copy = true end
-  opt.on('-d','--dryrun',
+  opts.on('-d','--dryrun',
               'Show what would be done'
         )   do @dryrun = true end
-  opt.on('-h','--help',
+  opts.on('-h','--help',
               'print this help and exit'
         ) do
-             puts opt.to_s.sub(/^ *-I\n/,'')
+             puts opts.to_s.sub(/^ *-I\n/,'')
              exit
           end
-  opt.on('-V','--version',
+  opts.on('-V','--version',
               'print version and exit'
         ) do
-             puts opt.version
+             puts opts.version
              exit
           end
-  opt.on('-I') do system("instscript #{MYNAME}"); exit; end
-  opt.parse!
-end or quit("Error parsing options")
+  opts.on('-I') do system("instscript #{MYNAME}"); exit; end
+  opts.parse!
+end or exit 1
+
 ARGV.size == 2 or quit("#{MYNAME}: need two file or directory names")
 
 f1, f2 = ARGV.map do |s|
