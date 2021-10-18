@@ -5,7 +5,7 @@
 |    type | ruby
 |  author | Wybo Dekker
 |   email | wybo@dekkerdocumenten.nl
-| version | 1.01
+| version | 1.02
 | license | GNU General Public License
 
 swap swaps the names of two files or two directories. It makes sure that those
