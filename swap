@@ -1,10 +1,11 @@
 #!/usr/bin/env ruby
 # encoding: utf-8
-Version='1.01'
+Version='1.02'
 MYNAME = File.basename($0)
 require 'optparse'
 require 'colorize'
 
+Help =
 <<'DOC'
 = swap - safely swap two files or directories
 
@@ -13,7 +14,8 @@ swap [options] file_or_dir1 file_or_dir2
 
 -c,--copy	Use if swapping directories in different file systems
 -d,--dryrun	Show what would be done
--h,--help	print this help and exit
+-h		print this help and exit
+-H, --help	show full documentation and exit
 -V,--version	print version and exit
 
 = Description
@@ -29,83 +31,101 @@ the |--copy| option was used.
 Released under the [GNU General Public License](www.gnu.org/copyleft/gpl.html)
 DOC
 
-def quit(mess)
-   puts mess.red.bold
-   exit 1
+def die(m)
+   STDERR.puts "[38;5;1m#{MYNAME}: #{m}"
+   exit 1                                                                            
+end
+
+def handle_options
+   ARGV.options do |opts|
+      opts.banner =  "#{MYNAME} - swap to files or directories\n"
+      opts.banner << "Usage: #{MYNAME} [options] file_or_dir1 file_or_dir2"
+      opts.separator ""
+      opts.summary_width=15 # 2x8-1                                                  
+      opts.summary_indent=''
+   
+      opts.on('-c','--copy','Use if swapping directories in different file systems') do
+         $copy = true
+      end
+   
+      opts.on('-d','--dryrun','Show what would be done') do
+         $dryrun = true
+      end
+   
+      opts.on('-h','print this help and exit') do
+         puts opts.to_a.delete_if { |x| x =~ /—$/ }
+         exit
+      end
+   
+      opts.on('-H','--help','show full documentation and exit') do       
+         puts Help
+         exit
+      end
+   
+      opts.on('-V','--version','print version and exit') do
+         puts opts.version
+         exit
+      end
+   
+      opts.on('-I','—') do
+         system("instscript #{MYNAME}") or
+            die 'the -I option is for developers only'
+         exit
+      end
+   
+      opts.parse!
+   end or exit 1
 end
 
 # defaults
-@dryrun = @copy = false
+$dryrun = $copy = false
 
-ARGV.options do |opts|
-  opts.banner =  "#{MYNAME} - swap to files or directories\n"
-  opts.banner << "Usage: #{MYNAME} [options] file_or_dir1 file_or_dir2"
-  opts.separator ""
-  opts.on('-c','--copy',
-              'Use if swapping directories in different file systems'
-        ) do @copy = true end
-  opts.on('-d','--dryrun',
-              'Show what would be done'
-        )   do @dryrun = true end
-  opts.on('-h','--help',
-              'print this help and exit'
-        ) do
-             puts opts.to_s.sub(/^ *-I\n/,'')
-             exit
-          end
-  opts.on('-V','--version',
-              'print version and exit'
-        ) do
-             puts opts.version
-             exit
-          end
-  opts.on('-I') do system("instscript #{MYNAME}"); exit; end
-  opts.parse!
-end or exit 1
+handle_options
 
-ARGV.size == 2 or quit("#{MYNAME}: need two file or directory names")
+ARGV.size == 2 or die("#{MYNAME}: need two file or directory names")
 
 f1, f2 = ARGV.map do |s|
-  f = s.sub(/\/+$/,'')  # remove trailing /
-  quit("I can't handle /bin because I use mv, cp, rm!!") if File.expand_path(f) == '/bin'
-  test(?e,f) or quit("file #{f} does not exist")
-  test(?w,f) or quit("file #{f} is not writable")
-  f
+   f = s.sub(/\/+$/,'')  # remove trailing /
+   test(?e,f) or die("file #{f} does not exist")
+   test(?w,f) or die("file #{f} is not writable")
+   f
 end
-f1 == f2   and quit("#{f1} and #{f2} are the same file")
+f1 == f2 and die("#{f1} and #{f2} are the same file")
 
 s1, s2 = File.lstat(f1), File.lstat(f2)
 ino1, mode1, dev1 = s1.ino, s1.mode >> 9, s1.dev
 ino2, mode2, dev2 = s2.ino, s2.mode >> 9, s2.dev
 
-ino1 == ino2 && quit("#{f1} and #{f2} are the same file")
+ino1 == ino2 && die("#{f1} and #{f2} are the same file")
 
-mode1 != mode2 and quit("you can not swap files (#{f1}, #{f2}) that have different types")
-mode1 == 64 || mode1 == 32 or quit("only directories and straight files can be swapped")
+mode1 != mode2 and
+   die("you can not swap files (#{f1}, #{f2}) that have different types")
+mode1 == 64 || mode1 == 32 or
+   die("only directories and straight files can be swapped")
 
 command = (mode1 == 32 && dev1 != dev2) ? 'cp -a' : 'mv'
-if command == 'cp -a' && !@copy 
-  quit("you can not swap directories between different\n" + 
+if command == 'cp -a' && !$copy 
+   die("you can not swap directories between different\n" + 
        "filesystems except by using the -c / --copy option")
 end
 
 # touch in case these files are involved in make operations:
 syscom = [
-  %Q{mv '#{f1}' '#{f1}.#{$$}'},
-  %Q{#{command} '#{f2}' '#{f1}'},
-  %Q{rm -rf '#{f2}'},
-  %Q{#{command} '#{f1}.#{$$}' '#{f2}'},
-  %Q{rm -rf '#{f1}.#{$$}'},
-  %Q{touch '#{f1}' '#{f2}'}
+   %Q{mv '#{f1}' '#{f1}.#{$$}'},
+   %Q{#{command} '#{f2}' '#{f1}'},
+   %Q{rm -rf '#{f2}'},
+   %Q{#{command} '#{f1}.#{$$}' '#{f2}'},
+   %Q{rm -rf '#{f1}.#{$$}'},
+   %Q{touch '#{f1}' '#{f2}'}
 ]
-unless @copy
+unless $copy
    syscom.delete_at(4)
    syscom.delete_at(2)
 end
 syscom = syscom.join("\n")
 
-if @dryrun
-  puts "This would happen:",syscom
+if $dryrun
+   puts "This would happen:",syscom
 else 
-  system(syscom)
+   system(syscom)
 end
