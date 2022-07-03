@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 # encoding: utf-8
-Version='1.02'
-MYNAME = File.basename($0)
+Version='1.03'
+Myname = File.basename($0)
 require 'optparse'
 require 'colorize'
 
@@ -15,14 +15,15 @@ swap [options] file_or_dir1 file_or_dir2
 -c,--copy	Use if swapping directories in different file systems
 -d,--dryrun	Show what would be done
 -h		print this help and exit
--H, --help	show full documentation and exit
+-H, --help	show full documentation via less and exit
 -V,--version	print version and exit
 
 = Description
 swap swaps the names of two files or two directories. It makes sure that those
 both exist, are writable, are both either directories or regular files, and are
 not the same file. If the two are on different devices, swap makes sure that
-the |--copy| option was used.
+the |--copy| option was used. Ownerships and permissions of the files must
+be the same.
 
 = Author
 [Wybo Dekker](wybo@dekkerdocumenten.nl)
@@ -31,15 +32,19 @@ the |--copy| option was used.
 Released under the [GNU General Public License](www.gnu.org/copyleft/gpl.html)
 DOC
 
+def help
+  system("echo \"#{Help}\" | less -P#{Myname}-#{Version.tr('.','·')}")
+end
+
 def die(m)
-   STDERR.puts "[38;5;1m#{MYNAME}: #{m}"
+   STDERR.puts "#{Myname}: #{m}".red
    exit 1                                                                            
 end
 
 def handle_options
    ARGV.options do |opts|
-      opts.banner =  "#{MYNAME} - swap to files or directories\n"
-      opts.banner << "Usage: #{MYNAME} [options] file_or_dir1 file_or_dir2"
+      opts.banner =  "#{Myname} - swap to files or directories\n"
+      opts.banner << "Usage: #{Myname} [options] file_or_dir1 file_or_dir2"
       opts.separator ""
       opts.summary_width=15 # 2x8-1                                                  
       opts.summary_indent=''
@@ -57,8 +62,8 @@ def handle_options
          exit
       end
    
-      opts.on('-H','--help','show full documentation and exit') do       
-         puts Help
+      opts.on('-H','--help','show full documentation via less and exit') do
+         help
          exit
       end
    
@@ -68,7 +73,7 @@ def handle_options
       end
    
       opts.on('-I','—') do
-         system("instscript #{MYNAME}") or
+         system("instscript #{Myname}") or
             die 'the -I option is for developers only'
          exit
       end
@@ -82,7 +87,7 @@ $dryrun = $copy = false
 
 handle_options
 
-ARGV.size == 2 or die("#{MYNAME}: need two file or directory names")
+ARGV.size == 2 or die("#{Myname}: need two file or directory names")
 
 f1, f2 = ARGV.map do |s|
    f = s.sub(/\/+$/,'')  # remove trailing /
@@ -93,17 +98,21 @@ end
 f1 == f2 and die("#{f1} and #{f2} are the same file")
 
 s1, s2 = File.lstat(f1), File.lstat(f2)
-ino1, mode1, dev1 = s1.ino, s1.mode >> 9, s1.dev
-ino2, mode2, dev2 = s2.ino, s2.mode >> 9, s2.dev
 
-ino1 == ino2 && die("#{f1} and #{f2} are the same file")
+s1.ino == s2.ino &&
+   die("#{f1} and #{f2} are the same file")
 
-mode1 != mode2 and
-   die("you can not swap files (#{f1}, #{f2}) that have different types")
-mode1 == 64 || mode1 == 32 or
+s1.mode == s2.mode or 
+   die("you can not swap files (#{f1}, #{f2}) that have different permissions")
+s1.gid == s2.gid or
+   die("you can not swap files (#{f1}, #{f2}) that have different group id's")
+s1.uid == s2.uid or
+   die("you can not swap files (#{f1}, #{f2}) that have different user id's")
+
+(s1.mode >>9) == 64 || (s2.mode >>9) == 32 or
    die("only directories and straight files can be swapped")
 
-command = (mode1 == 32 && dev1 != dev2) ? 'cp -a' : 'mv'
+command = ((s1.mode >>9) == 32 && s1.dev != s2.dev) ? 'cp -a' : 'mv'
 if command == 'cp -a' && !$copy 
    die("you can not swap directories between different\n" + 
        "filesystems except by using the -c / --copy option")
